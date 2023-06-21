@@ -5,7 +5,7 @@
 
   outputs = { self, nixpkgs }:
     let
-      systems = { "x86_64-linux" = {}; };
+      systems = nixpkgs.legacyPackages;
       combine = fn: with builtins;
         let
           parts = mapAttrs (s: _: fn (nixpkgs.legacyPackages.${s})) systems;
