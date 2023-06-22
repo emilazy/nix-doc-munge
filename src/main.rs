@@ -126,15 +126,6 @@ fn key_string(kv: &KeyValue) -> String {
         |kv| kv.path().map(|p| p.to_string()).collect::<Vec<_>>().join("."))
 }
 
-fn is_visible(attrs: &AttrSet) -> bool {
-    // there's no reason to set these keys if not to hide an item. we'll want
-    // to ignore hidden items because they don't show up in the docs, processing
-    // them only takes time for no changes.
-    attrs.entries().map(|e| key_string(&e)).all(|k| {
-        k != "internal" && k != "visible"
-    })
-}
-
 fn find_candidates(s: &str) -> Vec<(TextRange, bool)> {
     let ast = rnix::parse(s).as_result().unwrap();
     let mut nodes: VecDeque<_> = [(ast.node(), false)].into();
@@ -162,7 +153,6 @@ fn find_candidates(s: &str) -> Vec<(TextRange, bool)> {
                     if key_string(&e) == "description"
                         && parent_is_option
                         && !e.value().map(|v| is_call_to(v, "mdDoc")).unwrap_or(false)
-                        && is_visible(&attrs)
                     {
                         result.push((e.value().unwrap().text_range(), false));
                     }
@@ -211,7 +201,7 @@ impl Replacer for CodePat {
     }
 }
 
-fn convert_one(s: &str, pos: TextRange, add_parens: bool) -> (String, String) {
+fn convert_one(s: &str, pos: TextRange, add_parens: bool) -> String {
     let prefix = &s[.. pos.start().into()];
     let chunk = &s[pos.start().into() .. pos.end().into()];
     let suffix = &s[usize::from(pos.end()) ..];
@@ -331,15 +321,12 @@ fn convert_one(s: &str, pos: TextRange, add_parens: bool) -> (String, String) {
         ("", "")
     };
 
-    (
-        prefix.to_owned() + lpar + "\"a\" + (" + chunk + ")" + rpar + suffix,
-        prefix.to_owned()
-            + lpar
-            + "lib.mdDoc "
-            + &new_chunk
-            + rpar
-            + suffix,
-    )
+    prefix.to_owned()
+        + lpar
+        + "lib.mdDoc "
+        + &new_chunk
+        + rpar
+        + suffix
 }
 
 fn build_manual(dir: impl AsRef<Path>, import: Option<&str>) -> Result<String> {
@@ -407,7 +394,7 @@ fn convert_file(file: &str, import: bool, p: &StatusReport) -> Result<String> {
     let old = build_manual(&tmp, import)?;
 
     for (i, &(range, add_parens)) in candidates.iter().enumerate() {
-        let (test, change) = convert_one(&content, range, add_parens);
+        let change = convert_one(&content, range, add_parens);
         p.enter_item(format!("check {}/{} in {file}", i + 1, candidates.len()));
         fs::write(&f, change.as_bytes())?;
 
@@ -431,14 +418,8 @@ fn convert_file(file: &str, import: bool, p: &StatusReport) -> Result<String> {
         match build_manual(&tmp, import) {
             Ok(changed) => {
                 if normalize(&old) == normalize(&changed) {
-                    p.update_item(format!("test {}/{} in {file}", i + 1, candidates.len()));
-                    fs::write(&f, test.as_bytes())?;
-                    if let Ok(tested) = build_manual(&tmp, import) {
-                        if old != tested {
-                            p.changed_item();
-                            content = change;
-                        }
-                    }
+                    p.changed_item();
+                    content = change;
                 } else {
                     write_failure(Ok(&changed))?;
                 }
