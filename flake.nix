@@ -16,6 +16,10 @@
       combine (pkgs: rec {
         packages = rec {
           nix-doc-munge = pkgs.callPackage ./default.nix {};
+          report-failures = pkgs.writeShellApplication {
+            name = "nix-doc-munge-report-failures";
+            text = builtins.readFile ./report-failures.bash;
+          };
           default = nix-doc-munge;
         };
 
