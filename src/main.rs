@@ -400,17 +400,40 @@ fn convert_file(file: &str, import: bool, p: &StatusReport) -> Result<String> {
         let (test, change) = convert_one(&content, range, add_parens);
         p.enter_item(format!("check {}/{} in {file}", i + 1, candidates.len()));
         fs::write(&f, change.as_bytes())?;
-        if let Ok(changed) = build_manual(&tmp, import) {
-            if old == changed {
-                p.update_item(format!("test {}/{} in {file}", i + 1, candidates.len()));
-                fs::write(&f, test.as_bytes())?;
-                if let Ok(tested) = build_manual(&tmp, import) {
-                    if old != tested {
-                        p.changed_item();
-                        content = change;
-                    }
+
+        let write_failure = |result: Result<&str>| -> Result<()> {
+            let failure_prefix = format!("munge-failures/{}.{i}", file.replace('/', "_"));
+            fs::create_dir_all("munge-failures")?;
+            fs::write(format!("{failure_prefix}.before.nix"), initial_content.as_bytes())?;
+            fs::write(format!("{failure_prefix}.after.nix"), change.as_bytes())?;
+            match result {
+                Ok(changed) => {
+                    fs::write(format!("{failure_prefix}.before.xml"), old.as_bytes())?;
+                    fs::write(format!("{failure_prefix}.after.xml"), changed.as_bytes())?;
+                },
+                Err(error) => {
+                    fs::write(format!("{failure_prefix}.after.error"), error.to_string())?;
                 }
             }
+            Ok(())
+        };
+
+        match build_manual(&tmp, import) {
+            Ok(changed) => {
+                if old == changed {
+                    p.update_item(format!("test {}/{} in {file}", i + 1, candidates.len()));
+                    fs::write(&f, test.as_bytes())?;
+                    if let Ok(tested) = build_manual(&tmp, import) {
+                        if old != tested {
+                            p.changed_item();
+                            content = change;
+                        }
+                    }
+                } else {
+                    write_failure(Ok(&changed))?;
+                }
+            },
+            Err(error) => write_failure(Err(error))?,
         }
     }
 
