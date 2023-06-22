@@ -246,12 +246,12 @@ fn convert_one(s: &str, pos: TextRange, add_parens: bool) -> (String, String) {
         .dot_matches_new_line(true)
         .build().unwrap()
         .replace_all(&new_chunk, CodePat("{command}"));
-    let new_chunk = RegexBuilder::new(r#"<link xlink:href="(.+?)" ?/>"#)
+    let new_chunk = RegexBuilder::new(r#"<link\s*xlink:href="([^"]+)"\s*/>"#)
         .multi_line(true)
         .dot_matches_new_line(true)
         .build().unwrap()
         .replace_all(&new_chunk, SurroundPat("<", "$1", ">"));
-    let new_chunk = RegexBuilder::new(r#"<link xlink:href="(.+?)">(.*?)</link>"#)
+    let new_chunk = RegexBuilder::new(r#"<link\s*xlink:href="([^"]+)">(.*?)</link>"#)
         .multi_line(true)
         .dot_matches_new_line(true)
         .build().unwrap()
@@ -352,11 +352,9 @@ fn build_manual(dir: impl AsRef<Path>, import: Option<&str>) -> Result<String> {
     let result = Command::new("nix-build")
         .current_dir(dir)
         .args(["-o", &f, "-E"])
-        .arg(format!(r#"let sys = import ./nixos/default.nix {{
+        .arg(format!(r#"let sys = import ./. {{
                             configuration = {{
                                 # include the overridden module!
-                                documentation.nixos.includeAllModules = true;
-                                documentation.nixos.options.warningsAreErrors = false;
                                 {replace}
                             }};
                         }};
@@ -367,6 +365,18 @@ fn build_manual(dir: impl AsRef<Path>, import: Option<&str>) -> Result<String> {
     }
     // Ok(fs::read_to_string(format!("{f}/share/doc/nixos/options.json"))?)
     Ok(fs::read_to_string(f)?)
+}
+
+/// Filter out inconsequential differences.
+fn normalize(xml: &str) -> String {
+    xml
+        .replace(['‘', '’'], "'")
+        .replace(['“', '”'], "\"")
+        .replace('…', "...")
+        // HACK: We get additional whitespace for DocBook
+        // descriptions in the nix-darwin manual for some reason.
+        .replace("<para>\n", "<para>")
+        .replace("\n</para>", "</para>")
 }
 
 fn convert_file(file: &str, import: bool, p: &StatusReport) -> Result<String> {
@@ -420,7 +430,7 @@ fn convert_file(file: &str, import: bool, p: &StatusReport) -> Result<String> {
 
         match build_manual(&tmp, import) {
             Ok(changed) => {
-                if old == changed {
+                if normalize(&old) == normalize(&changed) {
                     p.update_item(format!("test {}/{} in {file}", i + 1, candidates.len()));
                     fs::write(&f, test.as_bytes())?;
                     if let Ok(tested) = build_manual(&tmp, import) {
