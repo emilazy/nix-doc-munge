@@ -136,7 +136,13 @@ fn find_candidates(s: &str) -> Vec<(TextRange, bool)> {
             SyntaxKind::NODE_APPLY => {
                 let call = Apply::cast(node.clone()).unwrap();
                 if let Some(arg) = call.value() {
-                    nodes.push_back((arg.clone(), is_call_to(node.clone(), "mkOption")));
+                    nodes.push_back((
+                        arg.clone(),
+                        is_call_to(node.clone(), "mkOption")
+                        || is_call_to(node.clone(), "mkNullOrBoolOption")
+                        || is_call_to(node.clone(), "mkNullOrStrOption")
+                        || is_call_to(node.clone(), "mkInternalOption")
+                    ));
                     if is_call_to(node.clone(), "mkEnableOption")
                         && Paren::cast(call.value().unwrap()).map_or(true, |p| {
                             !is_call_to(p.node().first_child().unwrap(), "mdDoc")
