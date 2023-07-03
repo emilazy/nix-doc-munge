@@ -243,17 +243,17 @@ fn convert_one(s: &str, pos: TextRange, add_parens: bool) -> String {
         .dot_matches_new_line(true)
         .build().unwrap()
         .replace_all(&new_chunk, CodePat("{command}"));
-    let new_chunk = RegexBuilder::new(r#"<link\s*xlink:href="([^"]+)"\s*/>"#)
+    let new_chunk = RegexBuilder::new(r#"<link\s*xlink:href=\s*"([^"]+)"\s*/>"#)
         .multi_line(true)
         .dot_matches_new_line(true)
         .build().unwrap()
         .replace_all(&new_chunk, SurroundPat("<", "$1", ">"));
-    let new_chunk = RegexBuilder::new(r#"<link\s*xlink:href="([^"]+)">(.*?)</link>"#)
+    let new_chunk = RegexBuilder::new(r#"<link\s*xlink:href=\s*"([^"]+)">(.*?)</link>"#)
         .multi_line(true)
         .dot_matches_new_line(true)
         .build().unwrap()
         .replace_all(&new_chunk, SurroundPat("", "[$2]($1)", ""));
-    let new_chunk = RegexBuilder::new(r#"<xref linkend="(.+?)" ?/>"#)
+    let new_chunk = RegexBuilder::new(r#"<xref\s*linkend="([^"]+)"\s*/>"#)
         .multi_line(true)
         .dot_matches_new_line(true)
         .build().unwrap()
@@ -288,6 +288,11 @@ fn convert_one(s: &str, pos: TextRange, add_parens: bool) -> String {
         .ignore_whitespace(true)
         .build().unwrap()
         .replace_all(&new_chunk, "{manpage}`$1($2)`");
+    let new_chunk = RegexBuilder::new(r#"<programlisting language="([^"]+)">"#)
+        .multi_line(true)
+        .dot_matches_new_line(true)
+        .build().unwrap()
+        .replace_all(&new_chunk, "```$1");
     let new_chunk = RegexBuilder::new(r#"</?programlisting>"#)
         .multi_line(true)
         .dot_matches_new_line(true)
@@ -304,23 +309,29 @@ fn convert_one(s: &str, pos: TextRange, add_parens: bool) -> String {
         .build().unwrap()
         .replace_all(&new_chunk, "{env}`$1`");
     let new_chunk = RegexBuilder::new(
-        r#"^( *)<note>(?:<para>)?(.*?)(?:</para>)?</note>"#)
+        r#"^( *)<note>(?:\s*<para>)?(.*?)(?:</para>\s*)?</note>"#)
         .multi_line(true)
         .dot_matches_new_line(true)
         .build().unwrap()
         .replace_all(&new_chunk, "$1::: {.note}\n$1$2\n$1:::");
     let new_chunk = RegexBuilder::new(
-        r#"^( *)<warning>(?:<para>)?(.*?)(?:</para>)?</warning>"#)
+        r#"^( *)<warning>(?:\s*<para>)?(.*?)(?:</para>\s*)?</warning>"#)
         .multi_line(true)
         .dot_matches_new_line(true)
         .build().unwrap()
         .replace_all(&new_chunk, "$1::: {.warning}\n$1$2\n$1:::");
     let new_chunk = RegexBuilder::new(
-        r#"^( *)<important>(?:<para>)?(.*?)(?:</para>)?</important>"#)
+        r#"^( *)<important>(?:\s*<para>)?(.*?)(?:</para>\s*)?</important>"#)
         .multi_line(true)
         .dot_matches_new_line(true)
         .build().unwrap()
         .replace_all(&new_chunk, "$1::: {.important}\n$1$2\n$1:::");
+    let new_chunk = RegexBuilder::new(
+        r#"(\n+)( *)</para>(\n *)?<para>(\n+)"#)
+        .multi_line(true)
+        .dot_matches_new_line(true)
+        .build().unwrap()
+        .replace_all(&new_chunk, "\n\n");
 
     let (lpar, rpar) = if add_parens {
         ("(", ")")
