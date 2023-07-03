@@ -369,15 +369,30 @@ fn build_manual(dir: impl AsRef<Path>, import: Option<&str>) -> Result<String> {
 }
 
 /// Filter out inconsequential differences.
-fn normalize(xml: &str) -> String {
+fn normalize<'a>(xml: &str) -> String {
+    const PATTERNS: &[(&str, &str)] = &[
+        (r#"[‘’]"#, "'"),
+        (r#"[“”]"#, "\""),
+        (r#"…"#, "..."),
+        (r#"\n+"#, "\n"),
+        (r#"\s+(<|>)"#, "\n$1"),
+        (r#">\s+"#, ">\n"),
+        (r#"\n?(?:</para>)?<programlisting([^>]*)>\n"#, "</para><programlisting$1>"),
+        (r#"^</programlisting>(?:\n?</para>)?(?:\n?<para>)?\n?"#, "</programlisting><para>"),
+        (r#"\s*</para>\s*<para>\s*"#, "\n</para><para>\n"),
+        (r#"\n<para>"#, "<para>"),
+        (r#"</para>\n"#, "</para>"),
+        (r#"<(citerefentry|/refentrytitle|/manvolnum)>\n"#, "<$1>"),
+        (r#"<link xlink:href="[^"]+">(<citerefentry>.*</citerefentry>)</link>"#, "$1"),
+    ];
+    let mut xml: String = xml.into();
+    for &(pattern, rep) in PATTERNS {
+        xml = RegexBuilder::new(pattern)
+            .multi_line(true)
+            .build().unwrap()
+            .replace_all(&xml, rep).into();
+    }
     xml
-        .replace(['‘', '’'], "'")
-        .replace(['“', '”'], "\"")
-        .replace('…', "...")
-        // HACK: We get additional whitespace for DocBook
-        // descriptions in the nix-darwin manual for some reason.
-        .replace("<para>\n", "<para>")
-        .replace("\n</para>", "</para>")
 }
 
 fn convert_file(file: &str, import: bool, p: &StatusReport) -> Result<String> {
