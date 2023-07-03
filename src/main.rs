@@ -142,6 +142,7 @@ fn find_candidates(s: &str) -> Vec<(TextRange, bool)> {
                         || is_call_to(node.clone(), "mkNullOrBoolOption")
                         || is_call_to(node.clone(), "mkNullOrStrOption")
                         || is_call_to(node.clone(), "mkInternalOption")
+                        || is_call_to(node.clone(), "mkNullableOption")
                     ));
                     if is_call_to(node.clone(), "mkEnableOption")
                         && Paren::cast(call.value().unwrap()).map_or(true, |p| {
@@ -338,20 +339,16 @@ fn convert_one(s: &str, pos: TextRange, add_parens: bool) -> String {
 fn build_manual(dir: impl AsRef<Path>, import: Option<&str>) -> Result<String> {
     let tmp = tempdir()?;
     let f = format!("{}/out", tmp.path().to_str().unwrap());
-    let replace = match import {
-        Some(new) => format!(r#"imports = [ {new} ];"#),
-        _ => "".to_string(),
-    };
+    assert!(import.is_none());
     let result = Command::new("nix-build")
         .current_dir(dir)
         .args(["-o", &f, "-E"])
-        .arg(format!(r#"let sys = import ./. {{
-                            configuration = {{
-                                # include the overridden module!
-                                {replace}
-                            }};
-                        }};
-                        in sys.config.system.build.manual.optionsDocBook"#))
+        .arg(r#"let docs = import ./docs {
+                    pkgs = import <nixpkgs> {};
+                    revision = "master";
+                    nixpkgsRevision = "master";
+                };
+                in docs.options.docBookForMigration"#)
         .output()?;
     if !result.status.success() {
         bail!("build failed: {}", String::from_utf8_lossy(&result.stderr));
