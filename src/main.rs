@@ -398,24 +398,27 @@ fn convert_file(file: &str, import: bool, p: &StatusReport) -> Result<String> {
     p.update_item(format!("old in {file}"));
     fs::write(&f, initial_content.as_bytes())?;
     let old = build_manual(&tmp, import)?;
+    let old_normalized = normalize(&old);
 
     for (i, &(range, add_parens)) in candidates.iter().enumerate() {
         let change = convert_one(&content, range, add_parens);
         p.enter_item(format!("check {}/{} in {file}", i + 1, candidates.len()));
         fs::write(&f, change.as_bytes())?;
 
-        let write_failure = |result: Result<&str>| -> Result<()> {
-            let failure_prefix = format!("munge-failures/{}.{i}", file.replace('/', "_"));
-            fs::create_dir_all("munge-failures")?;
-            fs::write(format!("{failure_prefix}.before.nix"), initial_content.as_bytes())?;
-            fs::write(format!("{failure_prefix}.after.nix"), change.as_bytes())?;
+        let write_failure = |result: Result<(&str, &str)>| -> Result<()> {
+            let failure_prefix = format!("munge-failures/{}.{i}", file.replace("./", "__").replace('/', "_"));
+            fs::create_dir_all(&failure_prefix)?;
+            fs::write(format!("{failure_prefix}/before.nix"), initial_content.as_bytes())?;
+            fs::write(format!("{failure_prefix}/after.nix"), change.as_bytes())?;
             match result {
-                Ok(changed) => {
-                    fs::write(format!("{failure_prefix}.before.xml"), old.as_bytes())?;
-                    fs::write(format!("{failure_prefix}.after.xml"), changed.as_bytes())?;
+                Ok((changed, changed_normalized)) => {
+                    fs::write(format!("{failure_prefix}/before.raw.xml"), old.as_bytes())?;
+                    fs::write(format!("{failure_prefix}/before.xml"), old_normalized.as_bytes())?;
+                    fs::write(format!("{failure_prefix}/after.raw.xml"), changed.as_bytes())?;
+                    fs::write(format!("{failure_prefix}/after.xml"), changed_normalized.as_bytes())?;
                 },
                 Err(error) => {
-                    fs::write(format!("{failure_prefix}.after.error"), error.to_string())?;
+                    fs::write(format!("{failure_prefix}/after.error"), error.to_string())?;
                 }
             }
             Ok(())
@@ -423,11 +426,12 @@ fn convert_file(file: &str, import: bool, p: &StatusReport) -> Result<String> {
 
         match build_manual(&tmp, import) {
             Ok(changed) => {
-                if normalize(&old) == normalize(&changed) {
+                let changed_normalized = normalize(&changed);
+                if old_normalized == changed_normalized {
                     p.changed_item();
                     content = change;
                 } else {
-                    write_failure(Ok(&changed))?;
+                    write_failure(Ok((&changed, &changed_normalized)))?;
                 }
             },
             Err(error) => write_failure(Err(error))?,
