@@ -465,19 +465,67 @@ fn convert_file(file: &str, import: bool, p: &StatusReport) -> Result<String> {
     Ok(content)
 }
 
+fn strip_file(file: &str) -> Result<String> {
+    let content = fs::read_to_string(file)?;
+
+    let ast = rnix::parse(&content).as_result().unwrap();
+    let mut new_content = String::new();
+    let mut ptr = ast.node().text_range().start();
+
+    for node in ast.node().descendants() {
+        if let Some(call) = Apply::cast(node.clone()) {
+            // TODO: consider being smarter about parentheses
+            // (e.g. in `description = lib.mdDoc (s + t);`)
+            if !is_call_to(node.clone(), "mdDoc") { continue }
+            let Some(arg) = call.value() else { continue };
+            let mut range = node.text_range();
+            if let Some(parent) = node.parent() {
+                if parent.kind() == SyntaxKind::NODE_PAREN {
+                    range = parent.text_range();
+                }
+            }
+            new_content.push_str(&content[ptr.into() .. range.start().into()]);
+            new_content.push_str(&arg.to_string());
+            ptr = range.end();
+        } else if node.kind() == SyntaxKind::NODE_IDENT {
+            if let Some(parent) = node.parent() {
+                if parent.kind() == SyntaxKind::NODE_KEY {
+                    continue;
+                }
+            }
+            let ident = node.to_string();
+            if ident != "mkAliasOptionModuleMD" && ident != "mkPackageOptionMD" {
+                continue;
+            }
+            let range = node.text_range();
+            new_content.push_str(&content[ptr.into() .. range.start().into()]);
+            new_content.push_str(&ident.replace("MD", ""));
+            ptr = range.end();
+        }
+    }
+
+    new_content.push_str(&content[ptr.into() ..]);
+    Ok(new_content)
+}
+
 fn main() -> Result<()> {
-    let (skip, import) = match env::args().skip(1).next() {
-        Some(s) if s == "--import" => (2, true),
-        _ => (1, false),
+    let (skip, import, strip) = match env::args().skip(1).next() {
+        Some(s) if s == "--import" => (2, true, false),
+        Some(s) if s == "--strip" => (2, false, true),
+        _ => (1, false, false),
     };
 
     let pool = ThreadPool::new(16);
     let changes = Arc::new(Mutex::new(vec![]));
 
-    let total_items = env::args().skip(skip).map(|file| {
-        let content = fs::read_to_string(file)?;
-        let candidates = find_candidates(&content);
-        Ok(candidates.len())
+    let total_items = env::args().skip(skip).map(|file: String| {
+        if strip {
+            Ok(1)
+        } else {
+            let content = fs::read_to_string(file)?;
+            let candidates = find_candidates(&content);
+            Ok(candidates.len())
+        }
     }).sum::<Result<usize>>()?;
 
     let printer = Arc::new(StatusReport::new(env::args().count() - skip, total_items));
@@ -487,7 +535,11 @@ fn main() -> Result<()> {
             let (changes, printer) = (Arc::clone(&changes), Arc::clone(&printer));
             move || {
                 printer.enter_file(&file);
-                let new = convert_file(&file, import, &printer).unwrap();
+                let new = if strip {
+                    strip_file(&file).unwrap()
+                } else {
+                    convert_file(&file, import, &printer).unwrap()
+                };
                 changes.lock().unwrap().push((file, new));
             }
         });
