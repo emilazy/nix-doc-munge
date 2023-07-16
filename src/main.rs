@@ -356,8 +356,8 @@ fn build_manual(dir: impl AsRef<Path>, import: Option<&str>) -> Result<String> {
         .args(["-o", &f, "-E"])
         .arg(r#"let docs = import ./docs {
                     pkgs = import <nixpkgs> {};
-                    revision = "master";
-                    nixpkgsRevision = "master";
+                    release = "23.11";
+                    isReleaseBranch = false;
                 };
                 in docs.options.docBookForMigration"#)
         .output()?;
